@@ -11,14 +11,14 @@ end
 
 save_weather = function ()
 	local file = io.open(minetest.get_worldpath().."/weather", "w+")
-	file:write(weather)
+	file:write(minetest.serialize(weather))
 	file:close()
 end
 
 read_weather = function ()
 	local file = io.open(minetest.get_worldpath().."/weather", "r")
 	if not file then return {type = "none", wind = 0} end
-	local readweather = file:read()
+	local readweather = minetest.deserialize(file:read())
 	file:close()
 	if type(readweather)~="table" then
 		return {type = "none", wind = 0}

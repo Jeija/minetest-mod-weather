@@ -36,6 +36,18 @@ local function set_defaults(vt,rt)
   end
 end
 
+local function start_weather(id, pos, heat, humidity, action)
+	weather.wind = {}
+	weather.wind.x = math.random(0,10)
+	weather.wind.y = 0
+	weather.wind.z = math.random(0,10)
+	weather.type = id
+	weather_mod.handle_lightning()
+	minetest.log("action","[weather] " .. action .. " weather to '" ..
+		weather.type .. "' at " .. minetest.pos_to_string(pos) ..
+		" heat is " .. heat .. " and humidity is " .. humidity)
+end
+
 local default_downfall = {
   --minimum starting position
   min_pos = {x=-9, y=10, z=-9},
@@ -69,15 +81,15 @@ function weather_mod.register_downfall(id,def)
 	local ndef = table.copy(def)
 	--what the downfall looks like
 	if not ndef.texture then
-    error("no texture given")
-  end
+		error("no texture given")
+	end
 	set_defaults(ndef,default_downfall)
 	--when to delete the particles
 	if not ndef.exptime then 
 		ndef.exptime = ndef.max_pos.y / (math.sqrt(ndef.falling_acceleration) + ndef.falling_speed)
 	end
 	if ndef.damage_player then
-    set_defaults(ndef.damage_player,default_damage)
+		set_defaults(ndef.damage_player,default_damage)
 	end
 	--actually register the downfall
 	weather_mod.registered_downfalls[name]=ndef
@@ -101,6 +113,7 @@ end
 
 local do_raycasts = minetest.is_yes(minetest.settings:get_bool('raycast_hitcheck'))
 local damage_steps = 0
+local weather_lock = false
 
 local function handle_damage(damage,player, downfall_origin)
 	if not damage then return end
@@ -132,31 +145,67 @@ local function handle_damage(damage,player, downfall_origin)
 end
 
 minetest.register_globalstep(function()
-	if weather.type=="none" then
-		for id,_ in pairs(weather_mod.registered_downfalls) do
-			if math.random(1, 50000) == 1 then
-				weather.wind = {}
-				weather.wind.x = math.random(0,10)
-				weather.wind.y = 0
-				weather.wind.z = math.random(0,10)
-				weather.type = id
-				weather_mod.handle_lightning()
-			end
-		end
-	else
-		if math.random(1, 10000) == 1 then
-			weather.type = "none"
-			if minetest.get_modpath("lightning") then
-				rawset(lightning,"auto",false)
-			end
-		end
-	end
-	local current_downfall = weather_mod.registered_downfalls[weather.type]
-	if current_downfall==nil then return end
 	for _, player in ipairs(minetest.get_connected_players()) do
 		local ppos = player:getpos()
 
 		if ppos.y > 120 then return end
+
+		local biome = minetest.get_biome_data(ppos)
+
+		if biome.heat == nil or biome.humidity == nil then return end
+
+		weather_lock = weather_lock or weather_mod.weather_cmd_set()
+
+		-- snow starts at 32 Fahrenheit
+		local id
+		if biome.heat <= 32 then
+			id = "weather:snow"
+		else
+			id = "weather:rain"
+		end
+
+		local downfall_chance = "10000"
+		if biome.humidity <= 1 then
+			downfall_chance = "100000"
+		elseif biome.humidity <= 20 then
+			downfall_chance = "85000"
+		elseif biome.humidity <= 35 then
+			downfall_chance = "60000"
+		elseif biome.humidity <= 65 then
+			downfall_chance = "50000"
+		elseif biome.humidity <= 85 then
+			downfall_chance = "30000"
+		end
+
+		local param = false
+		for i,_ in pairs(weather_mod.registered_downfalls) do
+			if i == weather.type then
+				param = true
+				break
+			end
+		end
+
+		-- start weather
+		if not param then
+			weather_lock = false
+			if math.random(downfall_chance) == 1 then
+				start_weather(id, ppos, biome.heat, biome.humidity, "Setting")
+			end
+		-- change weather
+		elseif not weather_lock and id ~= weather.type then
+			start_weather(id, ppos, biome.heat, biome.humidity, "Changing")
+		-- stop weather
+		elseif math.random(10000) == 1 then
+			weather.type = "none"
+			if minetest.get_modpath("lightning") then
+				rawset(lightning,"auto",false)
+			end
+			minetest.log("action","[weather] Stopping weather at " ..
+				minetest.pos_to_string(ppos))
+		end
+
+		local current_downfall = weather_mod.registered_downfalls[weather.type]
+		if current_downfall == nil then return end
 
 		local wind_pos = vector.multiply(weather.wind,-1)
 

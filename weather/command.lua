@@ -1,3 +1,9 @@
+function weather_mod.weather_cmd_set()
+	local weather_cmd = weather.cmd
+	weather.cmd = false
+	return weather_cmd or false
+end
+
 minetest.register_privilege("weather", {
 	description = "Change the weather",
 	give_to_singleplayer = false
@@ -10,20 +16,29 @@ minetest.register_chatcommand("setweather", {
 		show all types when no parameters are given", -- full description
 	privs = {weather = true},
 	func = function(name, param)
-		if param == nil or param == "" or param == "?" then
-			local types="none"
+		local types = "none"
+		local setparam = false
+		if param == "none" then
+			setparam = true
+		else
 			for i,_ in pairs(weather_mod.registered_downfalls) do
+				if i == param then
+					setparam = true
+					break
+				end
 				types=types..", "..i
 			end
-			minetest.chat_send_player(name, "avalible weather types: "..types)
+		end
+		if not setparam then
+			minetest.chat_send_player(name, "available weather types: "..types)
 		else
-			if weather_mod.registered_downfalls[param] == nil and not param == "none" then
-				minetest.chat_send_player(name, "This type of weather is not registered.\n"..
-					"To list all types of weather run the command without parameters.")
+			if param == "none" then
+				weather.cmd = false
 			else
-				weather.type = param
-				weather_mod.handle_lightning()
+				weather.cmd = true
 			end
+			weather.type = param
+			weather_mod.handle_lightning()
 		end
 	end
 })
